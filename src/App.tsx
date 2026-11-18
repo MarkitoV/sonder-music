@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import './App.css';
 
@@ -27,8 +28,8 @@ function App() {
   const [section, setSection] = useState('Reproduciendo');
   const [localSongs, setLocalSongs] = useState<any[]>([]);
 
-  const song = songs[selected];
   const allSongs = [...songs, ...localSongs];
+  const song = allSongs[selected];
 
   return (
     <main className="app">
@@ -147,11 +148,11 @@ function App() {
                 <span className="eyebrow">A CONTINUACIÓN</span>
                 <h2>Lista de reproducción</h2>
               </div>
-              <span className="track-count">{songs.length} pistas</span>
+              <span className="track-count">{allSongs.length} pistas</span>
             </div>
 
             <div className="queue-list">
-              {songs.map((item, index) => (
+              {allSongs.map((item, index) => (
                 <button
                   key={item.title}
                   className={`queue-item ${selected === index ? 'current' : ''}`}
@@ -181,14 +182,46 @@ function App() {
                   multiple: true,
                   filters: [
                     {
-                      name: 'Archivos de audio',
-                      extensions: ['mp3', 'flac', 'wav', 'ogg', 'm4a'],
+                      name: 'Archivos MP3',
+                      extensions: ['mp3'],
                     },
                   ],
                 });
 
-                if (files) {
-                  console.log('Archivos seleccionados:', files);
+                if (files && Array.isArray(files)) {
+                  const importedSongs = await Promise.all(
+                    files.map(async (file) => {
+                      try {
+                        const metadata = await invoke<{
+                          title: string;
+                          artist: string;
+                          album: string;
+                          duration: string;
+                        }>('read_mp3_metadata', { path: file });
+
+                        return {
+                          ...metadata,
+                          path: file,
+                        };
+                      } catch (error) {
+                        console.error('Error leyendo MP3:', file, error);
+
+                        return {
+                          title:
+                            file
+                              .split(/[\\/]/)
+                              .pop()
+                              ?.replace(/\.mp3$/i, '') ?? 'Desconocido',
+                          artist: 'Desconocido',
+                          album: 'Desconocido',
+                          duration: '--:--',
+                          path: file,
+                        };
+                      }
+                    })
+                  );
+
+                  setLocalSongs((current) => [...current, ...importedSongs]);
                 }
               }}
             >
@@ -210,7 +243,9 @@ function App() {
             <div className="playback-buttons">
               <button
                 onClick={() =>
-                  setSelected((selected - 1 + songs.length) % songs.length)
+                  setSelected(
+                    (selected - 1 + allSongs.length) % allSongs.length
+                  )
                 }
                 title="Anterior"
               >
@@ -224,7 +259,7 @@ function App() {
                 {playing ? 'Ⅱ' : '▶'}
               </button>
               <button
-                onClick={() => setSelected((selected + 1) % songs.length)}
+                onClick={() => setSelected((selected + 1) % allSongs.length)}
                 title="Siguiente"
               >
                 ▶|
